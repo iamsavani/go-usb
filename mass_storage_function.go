@@ -2,9 +2,9 @@ package gadget
 
 // MassStorageFunction represents a mass storage gadget function.
 type MassStorageFunction struct {
-    Name  string
-    Stall bool
-    Luns  []MassStorageLun
+	Name  string
+	Stall bool
+	Luns  []MassStorageLun
 }
 
 // Ensure MassStorageFunction implements the Function interface.
@@ -12,41 +12,46 @@ var _ Function = (*MassStorageFunction)(nil)
 
 // GadgetFunctionName returns the name of the mass storage gadget function.
 func (fn *MassStorageFunction) GadgetFunctionName() string {
-    return "mass_storage." + fn.Name
+	return "mass_storage." + fn.Name
 }
 
 // GadgetFunctionCreate generates steps to create the mass storage gadget function.
 func (fn *MassStorageFunction) GadgetFunctionCreate() (steps Steps) {
-    steps.Add(Step{Action: Write, Path: "stall", Value: boolToIntStr(fn.Stall)})
-    for _, lun := range fn.Luns {
-        prefix := "lun." + lun.Name
-        lunSteps := Steps{
-            {Action: MkdirCreateOnly, Path: "", Value: ""},
-        }
-        lunSteps.AddSteps(lun.lunCreate())
-        lunSteps.PrependPath(prefix)
-        steps.AddSteps(lunSteps)
-    }
-    return
+	steps.Append(Step{Write, "stall", boolToIntStr(fn.Stall)})
+	for _, lun := range fn.Luns {
+		var (
+			prefix = "lun." + lun.Name
+			lsteps = Steps{
+				Step{MkdirCreateOnly, "", ""},
+			}
+		)
+
+		lsteps.Extend(lun.lunCreate())
+		lsteps.PrependPath(prefix)
+
+		steps.Extend(lsteps)
+	}
+
+	return
 }
 
 // MassStorageLun represents a logical unit number for a mass storage function.
 type MassStorageLun struct {
-    Name          string
-    File          string
-    Removable     bool
-    Cdrom         bool
-    Ro            bool
-    InquiryString string
+	Name          string
+	File          string
+	Removable     bool
+	Cdrom         bool
+	Ro            bool
+	InquiryString string
 }
 
 // lunCreate generates steps to create the LUN.
 func (lun *MassStorageLun) lunCreate() Steps {
-    return Steps{
-        {Action: Write, Path: "file", Value: lun.File},
-        {Action: Write, Path: "removable", Value: boolToIntStr(lun.Removable)},
-        {Action: Write, Path: "cdrom", Value: boolToIntStr(lun.Cdrom)},
-        {Action: Write, Path: "ro", Value: boolToIntStr(lun.Ro)},
-        {Action: Write, Path: "inquiry_string", Value: lun.InquiryString},
-    }
+	return Steps{
+		Step{Write, "file", lun.File},
+		Step{Write, "removable", boolToIntStr(lun.Removable)},
+		Step{Write, "cdrom", boolToIntStr(lun.Cdrom)},
+		Step{Write, "ro", boolToIntStr(lun.Ro)},
+		Step{Write, "inquiry_string", lun.InquiryString},
+	}
 }
