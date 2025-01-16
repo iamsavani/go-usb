@@ -60,6 +60,16 @@ func (g *Gadget) Create() error {
     return g.CreateSteps().Run()
 }
 
+// Remove removes the gadget.
+func (g *Gadget) Remove() error {
+    return g.RemoveSteps().Run()
+}
+
+// RemoveSteps generates steps to remove the gadget by reversing the creation steps.
+func (g *Gadget) RemoveSteps() Steps {
+    return g.CreateSteps().Undo().Reverse()
+}
+
 // CreateSteps generates steps to configure the gadget.
 func (g *Gadget) CreateSteps() (steps Steps) {
     steps = Steps{

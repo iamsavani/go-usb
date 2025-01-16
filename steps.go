@@ -29,6 +29,9 @@ type Step struct {
 // Steps is a slice of Step.
 type Steps []Step
 
+// Action represents the type of action to be performed in a step.
+type Action int
+
 // Run executes the step.
 func (s Step) Run() error {
     switch s.Action {
@@ -90,5 +93,33 @@ func (steps Steps) PrependPath(path string) Steps {
     return steps
 }
 
-// Action represents the type of action to be performed in a step.
-type Action int
+// undo generates the step to undo the current step.
+func (s Step) Undo() Step {
+	switch s.Action {
+	case Mkdir:
+		return Step{Rmdir, s.Arg0, ""}
+	case Symlink:
+		return Step{Remove, s.Arg1, ""}
+	default:
+		return Step{Noop, "", ""}
+	}
+}
+
+// Clone returns a copy of the steps.
+func (steps Steps) Clone() Steps { return slices.Clone(steps) }
+
+// Undo generates the steps to undo the current steps.
+func (steps Steps) Reverse() (rev Steps) {
+	rev = steps.Clone()
+	slices.Reverse(rev)
+	return
+}
+
+// Reverse reverses the order of the steps.
+func (steps Steps) Undo() Steps {
+	var undo = steps.Clone()
+	for i := range undo {
+		undo[i] = undo[i].Undo()
+	}
+	return undo
+}
