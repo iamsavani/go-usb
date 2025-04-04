@@ -42,7 +42,7 @@ type Function interface {
 }
 
 // gadgetPath returns the path to the gadget.
-func (g *Gadget) gadgetPath() string {
+func (g *Gadget) GetGadgetPath() string {
 	if g.GadgetPath != "" {
 		return g.GadgetPath
 	}
@@ -51,7 +51,7 @@ func (g *Gadget) gadgetPath() string {
 
 // Exists checks if the gadget exists.
 func (g *Gadget) Exists() bool {
-	_, err := os.Stat(g.gadgetPath())
+	_, err := os.Stat(g.GetGadgetPath())
 	return !os.IsNotExist(err)
 }
 
