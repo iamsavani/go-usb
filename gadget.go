@@ -2,8 +2,10 @@ package gadget
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -47,6 +49,15 @@ func (g *Gadget) GetGadgetPath() string {
 		return g.GadgetPath
 	}
 	return filepath.Join(GadgetConfigBasePath, g.Name)
+}
+
+func (g *Gadget) ReadConfigfsFile(elem ...string) (string, error) {
+	var path = filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
+	if buf, err := ioutil.ReadFile(path); err != nil {
+		return "", nil
+	} else {
+		return strings.TrimRight(string(buf), "\n"), nil
+	}
 }
 
 // Exists checks if the gadget exists.
@@ -123,5 +134,5 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 		steps.Append(Step{Write, "UDC", v})
 	}
 
-	return steps.PrependPath(g.gadgetPath())
+	return steps.PrependPath(g.GetGadgetPath())
 }
