@@ -18,6 +18,7 @@ const (
 	WriteBinary
 	Remove
 	Symlink
+	Unlink
 )
 
 // Step represents an action to be performed with its arguments.
