@@ -203,3 +203,33 @@ func (g *Gadget) GetFunctionPath(fnName string) (string, bool) {
 	}
 	return "", false
 }
+
+// Unbind disables the gadget by writing an empty string to the UDC file.
+func (g *Gadget) Unbind() error {
+	udcPath := filepath.Join(g.GetGadgetPath(), "UDC")
+	err := os.WriteFile(udcPath, []byte(""), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to unbind UDC: %w", err)
+	}
+	return nil
+}
+
+// Bind enables the gadget by writing the UDC name to the UDC file.
+func (g *Gadget) Bind(udc string) error {
+	if udc != "" {
+		g.UDC = udc
+	} else {
+		udcs := GetUdcs()
+		if len(udcs) < 1 {
+			return fmt.Errorf("no UDC found")
+		}
+		g.UDC = udcs[0]
+	}
+
+	udcPath := filepath.Join(g.GetGadgetPath(), "UDC")
+	if err := os.WriteFile(udcPath, []byte(g.UDC), 0644); err != nil {
+		return fmt.Errorf("failed to bind UDC: %w", err)
+	}
+
+	return nil
+}
