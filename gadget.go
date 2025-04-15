@@ -132,6 +132,12 @@ func (g *Gadget) AddFunction(configName, functionName string, fn Function) error
 	if _, exists := cfg.Functions[functionName]; exists {
 		return fmt.Errorf("function %s already exists", functionName)
 	}
+
+	// Unbind before making changes
+	udcPath := filepath.Join(g.GetGadgetPath(), "UDC")
+	originalUDC, _ := os.ReadFile(udcPath)
+	_ = os.WriteFile(udcPath, []byte(""), 0644)
+
 	cfg.Functions[functionName] = fn
 
 	fnPath := "functions/" + functionName
@@ -145,9 +151,21 @@ func (g *Gadget) AddFunction(configName, functionName string, fn Function) error
 	steps.PrependPath(fnPath)
 
 	steps.Append(Step{Symlink, fnPath, configPath + "/" + functionName})
-
 	steps.PrependPath(g.GetGadgetPath())
-	return steps.Run()
+
+	// Run steps to add function
+	if err := steps.Run(); err != nil {
+		return fmt.Errorf("failed to add function: %w", err)
+	}
+
+	// Rebind UDC
+	if len(originalUDC) > 0 {
+		if err := os.WriteFile(udcPath, originalUDC, 0644); err != nil {
+			return fmt.Errorf("failed to rebind UDC: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // RemoveFunction removes a function from a given config in the gadget.
