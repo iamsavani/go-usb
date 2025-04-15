@@ -150,6 +150,33 @@ func (g *Gadget) AddFunction(configName, functionName string, fn Function) error
 	return steps.Run()
 }
 
+// RemoveFunction removes a function from a given config in the gadget.
+func (g *Gadget) RemoveFunction(configName, functionName string) error {
+	cfg, ok := g.Configs[configName]
+	if !ok {
+		return fmt.Errorf("config %s not found", configName)
+	}
+
+	if _, exists := cfg.Functions[functionName]; !exists {
+		return fmt.Errorf("function %s not found in config %s", functionName, configName)
+	}
+
+	fnPath := filepath.Join("functions", functionName)
+	configPath := filepath.Join("configs", configName)
+
+	steps := Steps{
+		Step{Comment, fmt.Sprintf("Remove function `%s` from config `%s`", functionName, configName), ""},
+		Step{Remove, filepath.Join(configPath, functionName), ""}, // remove symlink
+		Step{Remove, fnPath, ""}, // remove function directory
+	}
+	steps.PrependPath(g.GetGadgetPath())
+
+	// Remove from internal state map
+	delete(cfg.Functions, functionName)
+
+	return steps.Run()
+}
+
 // BuildRemovalSteps returns steps to remove the entire gadget configuration.
 func (g *Gadget) BuildRemovalSteps() Steps {
 	steps := Steps{Step{Write, "UDC", ""}}
