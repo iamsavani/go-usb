@@ -12,7 +12,12 @@ var _ Function = (*MassStorageFunction)(nil)
 
 // GadgetFunctionName returns the name of the mass storage gadget function.
 func (fn *MassStorageFunction) GadgetFunctionName() string {
-	return "mass_storage." + fn.Name
+	return fn.Name
+}
+
+// GadgetFunctionType returns the function type name (without the instance).
+func (fn *MassStorageFunction) GadgetFunctionType() string {
+	return "mass_storage"
 }
 
 // GadgetFunctionCreate generates steps to create the mass storage gadget function.
@@ -31,7 +36,6 @@ func (fn *MassStorageFunction) GadgetFunctionCreate() (steps Steps) {
 
 		steps.Extend(lsteps)
 	}
-
 	return
 }
 

@@ -26,7 +26,7 @@ type Gadget struct {
 	Manufacturer string
 	Product      string
 	UDC          string
-	Configs      []Config
+	Configs      map[string]*Config
 }
 
 // Config represents a USB gadget configuration.
@@ -34,16 +34,16 @@ type Config struct {
 	Name          string
 	Configuration string
 	MaxPower      string
-	Functions     []Function
+	Functions     map[string]Function
 }
 
 // Function is an interface for USB gadget functions.
 type Function interface {
 	GadgetFunctionName() string
+	GadgetFunctionType() string
 	GadgetFunctionCreate() Steps
 }
 
-// gadgetPath returns the path to the gadget.
 func (g *Gadget) GetGadgetPath() string {
 	if g.GadgetPath != "" {
 		return g.GadgetPath
@@ -52,12 +52,12 @@ func (g *Gadget) GetGadgetPath() string {
 }
 
 func (g *Gadget) ReadConfigfsFile(elem ...string) (string, error) {
-	var path = filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
-	if buf, err := ioutil.ReadFile(path); err != nil {
+	path := filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
+	buf, err := ioutil.ReadFile(path)
+	if err != nil {
 		return "", nil
-	} else {
-		return strings.TrimRight(string(buf), "\n"), nil
 	}
+	return strings.TrimRight(string(buf), "\n"), nil
 }
 
 // Exists checks if the gadget exists.
@@ -73,12 +73,7 @@ func (g *Gadget) Create() error {
 
 // Remove removes the gadget.
 func (g *Gadget) Remove() error {
-	return g.RemoveSteps().Run()
-}
-
-// RemoveSteps generates steps to remove the gadget by reversing the creation steps.
-func (g *Gadget) RemoveSteps() Steps {
-	return g.CreateSteps().Undo().Reverse()
+	return g.BuildRemovalSteps().Run()
 }
 
 // CreateSteps generates steps to configure the gadget.
@@ -96,43 +91,88 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 		Step{Write, "strings/" + StrEnglish + "/product", g.Product},
 	}
 
-	for i := range g.Configs {
-		var (
-			c           = &g.Configs[i]
-			configPath  = "configs/" + c.Name
-			configSteps = Steps{
-				Step{Comment, fmt.Sprintf("config `%s`", c.Name), ""},
-				Step{Mkdir, "", ""},
-				Step{Mkdir, "strings/" + StrEnglish, ""},
-				Step{Write, "strings/" + StrEnglish + "/configuration", c.Configuration},
-			}
-		)
-
+	for name, c := range g.Configs {
+		configPath := "configs/" + c.Name
+		configSteps := Steps{
+			Step{Comment, fmt.Sprintf("config `%s`", name), ""},
+			Step{Mkdir, "", ""},
+			Step{Mkdir, "strings/" + StrEnglish, ""},
+			Step{Write, "strings/" + StrEnglish + "/configuration", c.Configuration},
+		}
 		configSteps.PrependPath(configPath)
 		steps.Extend(configSteps)
 
-		for _, fn := range c.Functions {
-			var (
-				name    = fn.GadgetFunctionName()
-				fnPath  = "functions/" + name
-				fnSteps = Steps{
-					Step{Comment, fmt.Sprintf("config `%s`, function `%s`", c.Name, name), ""},
-					Step{Mkdir, "", ""},
-				}
-			)
-
+		for fname, fn := range c.Functions {
+			fnPath := "functions/" + fname
+			fnSteps := Steps{
+				Step{Comment, fmt.Sprintf("config `%s`, function `%s`", name, fname), ""},
+				Step{Mkdir, "", ""},
+			}
 			fnSteps.Extend(fn.GadgetFunctionCreate())
 			fnSteps.PrependPath(fnPath)
 			steps.Extend(fnSteps)
-
 			// Attach function to configuration
-			steps.Append(Step{Symlink, fnPath, configPath + "/" + name})
+			steps.Append(Step{Symlink, fnPath, configPath + "/" + fname})
 		}
 	}
 
-	if v := g.UDC; v != "" {
-		steps.Append(Step{Write, "UDC", v})
+	if g.UDC != "" {
+		steps.Append(Step{Write, "UDC", g.UDC})
 	}
 
 	return steps.PrependPath(g.GetGadgetPath())
+}
+
+// AddFunction adds a new function to the gadget.
+func (g *Gadget) AddFunction(configName, functionName string, fn Function) error {
+	cfg, ok := g.Configs[configName]
+	if !ok {
+		return fmt.Errorf("config %s not found", configName)
+	}
+	if _, exists := cfg.Functions[functionName]; exists {
+		return fmt.Errorf("function %s already exists", functionName)
+	}
+	cfg.Functions[functionName] = fn
+
+	fnPath := "functions/" + functionName
+	configPath := "configs/" + configName
+
+	steps := Steps{
+		Step{Comment, fmt.Sprintf("Add function `%s` to config `%s`", functionName, configName), ""},
+		Step{Mkdir, "", ""},
+	}
+	steps.Extend(fn.GadgetFunctionCreate())
+	steps.PrependPath(fnPath)
+
+	steps.Append(Step{Symlink, fnPath, configPath + "/" + functionName})
+
+	steps.PrependPath(g.GetGadgetPath())
+	return steps.Run()
+}
+
+// BuildRemovalSteps returns steps to remove the entire gadget configuration.
+func (g *Gadget) BuildRemovalSteps() Steps {
+	steps := Steps{Step{Write, "UDC", ""}}
+	for cfgName, cfg := range g.Configs {
+		configPath := filepath.Join("configs", cfgName)
+		for fnName := range cfg.Functions {
+			functionPath := filepath.Join("functions", fnName)
+			steps.Append(Step{Remove, filepath.Join(configPath, fnName), ""})
+			steps.Append(Step{Remove, functionPath, ""})
+		}
+		steps.Append(Step{Remove, filepath.Join(configPath, "strings", StrEnglish), ""})
+		steps.Append(Step{Remove, configPath, ""})
+	}
+	steps.Append(Step{Remove, filepath.Join("strings", StrEnglish), ""})
+	steps.Append(Step{Remove, "", ""}) // remove root gadget dir
+	return steps.PrependPath(g.GetGadgetPath())
+}
+
+func (g *Gadget) GetFunctionPath(fnName string) (string, bool) {
+	for _, cfg := range g.Configs {
+		if _, ok := cfg.Functions[fnName]; ok {
+			return filepath.Join(g.GetGadgetPath(), "functions", fnName), true
+		}
+	}
+	return "", false
 }
