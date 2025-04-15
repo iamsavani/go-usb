@@ -1,6 +1,8 @@
 package gadget
 
-import "strconv"
+import (
+	"strconv"
+)
 
 // HidFunction represents a HID gadget function.
 type HidFunction struct {
@@ -16,7 +18,12 @@ var _ Function = (*HidFunction)(nil)
 
 // GadgetFunctionName returns the name of the HID gadget function.
 func (fn *HidFunction) GadgetFunctionName() string {
-	return "hid." + fn.Name
+	return fn.Name
+}
+
+// GadgetFunctionType returns the function type name (without the instance).
+func (fn *HidFunction) GadgetFunctionType() string {
+	return "hid"
 }
 
 // GadgetFunctionCreate generates steps to create the HID gadget function.

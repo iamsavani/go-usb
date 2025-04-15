@@ -26,7 +26,7 @@ type Gadget struct {
 	Manufacturer string
 	Product      string
 	UDC          string
-	Configs      []Config
+	Configs      map[string]*Config
 }
 
 // Config represents a USB gadget configuration.
@@ -34,16 +34,16 @@ type Config struct {
 	Name          string
 	Configuration string
 	MaxPower      string
-	Functions     []Function
+	Functions     map[string]Function
 }
 
 // Function is an interface for USB gadget functions.
 type Function interface {
 	GadgetFunctionName() string
+	GadgetFunctionType() string
 	GadgetFunctionCreate() Steps
 }
 
-// gadgetPath returns the path to the gadget.
 func (g *Gadget) GetGadgetPath() string {
 	if g.GadgetPath != "" {
 		return g.GadgetPath
@@ -52,12 +52,12 @@ func (g *Gadget) GetGadgetPath() string {
 }
 
 func (g *Gadget) ReadConfigfsFile(elem ...string) (string, error) {
-	var path = filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
-	if buf, err := ioutil.ReadFile(path); err != nil {
+	path := filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
+	buf, err := ioutil.ReadFile(path)
+	if err != nil {
 		return "", nil
-	} else {
-		return strings.TrimRight(string(buf), "\n"), nil
 	}
+	return strings.TrimRight(string(buf), "\n"), nil
 }
 
 // Exists checks if the gadget exists.
@@ -91,148 +91,87 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 		Step{Write, "strings/" + StrEnglish + "/product", g.Product},
 	}
 
-	for i := range g.Configs {
-		var (
-			c           = &g.Configs[i]
-			configPath  = "configs/" + c.Name
-			configSteps = Steps{
-				Step{Comment, fmt.Sprintf("config `%s`", c.Name), ""},
-				Step{Mkdir, "", ""},
-				Step{Mkdir, "strings/" + StrEnglish, ""},
-				Step{Write, "strings/" + StrEnglish + "/configuration", c.Configuration},
-			}
-		)
-
+	for name, c := range g.Configs {
+		configPath := "configs/" + c.Name
+		configSteps := Steps{
+			Step{Comment, fmt.Sprintf("config `%s`", name), ""},
+			Step{Mkdir, "", ""},
+			Step{Mkdir, "strings/" + StrEnglish, ""},
+			Step{Write, "strings/" + StrEnglish + "/configuration", c.Configuration},
+		}
 		configSteps.PrependPath(configPath)
 		steps.Extend(configSteps)
 
-		for _, fn := range c.Functions {
-			var (
-				name    = fn.GadgetFunctionName()
-				fnPath  = "functions/" + name
-				fnSteps = Steps{
-					Step{Comment, fmt.Sprintf("config `%s`, function `%s`", c.Name, name), ""},
-					Step{Mkdir, "", ""},
-				}
-			)
-
+		for fname, fn := range c.Functions {
+			fnPath := "functions/" + fname
+			fnSteps := Steps{
+				Step{Comment, fmt.Sprintf("config `%s`, function `%s`", name, fname), ""},
+				Step{Mkdir, "", ""},
+			}
 			fnSteps.Extend(fn.GadgetFunctionCreate())
 			fnSteps.PrependPath(fnPath)
 			steps.Extend(fnSteps)
-
 			// Attach function to configuration
-			steps.Append(Step{Symlink, fnPath, configPath + "/" + name})
+			steps.Append(Step{Symlink, fnPath, configPath + "/" + fname})
 		}
 	}
 
-	if v := g.UDC; v != "" {
-		steps.Append(Step{Write, "UDC", v})
+	if g.UDC != "" {
+		steps.Append(Step{Write, "UDC", g.UDC})
 	}
 
 	return steps.PrependPath(g.GetGadgetPath())
 }
 
-// AddFunction dynamically adds a function to the first config of the gadget
-func (g *Gadget) AddFunction(functionType, additionalConfig interface{}) error {
-	if len(g.Configs) == 0 {
-		return fmt.Errorf("no configuration found to add function")
+// AddFunction adds a new function to the gadget.
+func (g *Gadget) AddFunction(configName, functionName string, fn Function) error {
+	cfg, ok := g.Configs[configName]
+	if !ok {
+		return fmt.Errorf("config %s not found", configName)
 	}
-
-	var newFunction Function
-
-	// Choose function type based on the passed type
-	switch functionType {
-	case "hid":
-		// Assuming additionalConfig contains the type of HID function (keyboard or mouse)
-		if config, ok := additionalConfig.(HidFunction); ok {
-			newFunction = &config
-		} else {
-			return fmt.Errorf("invalid configuration for HID function")
-		}
-	case "mass_storage":
-		// Assuming additionalConfig contains the specific MassStorageFunction details
-		if config, ok := additionalConfig.(MassStorageFunction); ok {
-			newFunction = &config
-		} else {
-			return fmt.Errorf("invalid configuration for mass storage")
-		}
-	default:
-		return fmt.Errorf("unsupported function type: %s", functionType)
+	if _, exists := cfg.Functions[functionName]; exists {
+		return fmt.Errorf("function %s already exists", functionName)
 	}
+	cfg.Functions[functionName] = fn
 
-	// Add the function to the first config's function list
-	g.Configs[0].Functions = append(g.Configs[0].Functions, newFunction)
+	fnPath := "functions/" + functionName
+	configPath := "configs/" + configName
 
-	// Regenerate gadget steps to apply the changes
-	return g.CreateSteps().Run()
+	steps := Steps{
+		Step{Comment, fmt.Sprintf("Add function `%s` to config `%s`", functionName, configName), ""},
+		Step{Mkdir, "", ""},
+	}
+	steps.Extend(fn.GadgetFunctionCreate())
+	steps.PrependPath(fnPath)
+
+	steps.Append(Step{Symlink, fnPath, configPath + "/" + functionName})
+
+	steps.PrependPath(g.GetGadgetPath())
+	return steps.Run()
 }
 
-func (g *Gadget) RemoveFunction(fnName string) error {
-	for _, cfg := range g.Configs {
-		configPath := filepath.Join(g.GetGadgetPath(), "configs", cfg.Name)
-		symlinkPath := filepath.Join(configPath, fnName)
-
-		if _, err := os.Lstat(symlinkPath); err == nil {
-			if err := os.Remove(symlinkPath); err != nil {
-				return err
-			}
-			fnPath := filepath.Join(g.GetGadgetPath(), "functions", fnName)
-			if err := os.RemoveAll(fnPath); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-	return fmt.Errorf("function %s not found in any config", fnName)
-}
-
-// RemoveAllFunctions removes all functions from all configs
-func (g *Gadget) RemoveAllFunctions() error {
-	for _, cfg := range g.Configs {
-		for _, fn := range cfg.Functions {
-			if err := g.RemoveFunction(fn.GadgetFunctionName()); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// BuildRemovalSteps constructs Steps to fully remove the gadget from configfs
+// BuildRemovalSteps returns steps to remove the entire gadget configuration.
 func (g *Gadget) BuildRemovalSteps() Steps {
-	var steps Steps
-	gadgetPath := g.GetGadgetPath()
-
-	// Unbind
-	steps.Append(Step{Write, "UDC", ""})
-
-	for _, cfg := range g.Configs {
-		configPath := filepath.Join("configs", cfg.Name)
-
-		for _, fn := range cfg.Functions {
-			fnName := fn.GadgetFunctionName()
-			fnPath := filepath.Join("functions", fnName)
-
+	steps := Steps{Step{Write, "UDC", ""}}
+	for cfgName, cfg := range g.Configs {
+		configPath := filepath.Join("configs", cfgName)
+		for fnName := range cfg.Functions {
+			functionPath := filepath.Join("functions", fnName)
 			steps.Append(Step{Remove, filepath.Join(configPath, fnName), ""})
-			steps.Append(Step{Remove, fnPath, ""})
+			steps.Append(Step{Remove, functionPath, ""})
 		}
-
-		steps.Append(Step{Remove, filepath.Join(configPath, "strings/"+StrEnglish), ""})
+		steps.Append(Step{Remove, filepath.Join(configPath, "strings", StrEnglish), ""})
 		steps.Append(Step{Remove, configPath, ""})
 	}
-
 	steps.Append(Step{Remove, filepath.Join("strings", StrEnglish), ""})
 	steps.Append(Step{Remove, "", ""}) // remove root gadget dir
-
-	return steps.PrependPath(gadgetPath)
+	return steps.PrependPath(g.GetGadgetPath())
 }
 
-func (g *Gadget) GetFunctionPath(functionName string) (string, bool) {
+func (g *Gadget) GetFunctionPath(fnName string) (string, bool) {
 	for _, cfg := range g.Configs {
-		for _, fn := range cfg.Functions {
-			if fn.GadgetFunctionName() == functionName {
-				return filepath.Join(g.GetGadgetPath(), "functions", functionName), true
-			}
+		if _, ok := cfg.Functions[fnName]; ok {
+			return filepath.Join(g.GetGadgetPath(), "functions", fnName), true
 		}
 	}
 	return "", false

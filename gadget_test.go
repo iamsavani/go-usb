@@ -2,12 +2,15 @@ package gadget
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-// TestAddFunction tests the dynamic addition of HID and mass storage functions to a gadget.
 func TestAddFunction(t *testing.T) {
-	// Create a new Gadget instance
+	// Setup a test gadget
 	gadget := &Gadget{
 		Name:         "test_gadget_add",
 		IdVendor:     0x1234,
@@ -15,69 +18,30 @@ func TestAddFunction(t *testing.T) {
 		SerialNumber: "123456789",
 		Manufacturer: "TestManufacturer",
 		Product:      "TestProduct",
+		Configs: map[string]*Config{
+			"c.1": {
+				Name:          "c.1",
+				Configuration: "Mass Storage Config",
+				MaxPower:      "120",
+				Functions:     map[string]Function{},
+			},
+		},
 	}
 
-	// Create a configuration and add it to the gadget
-	config := Config{
-		Name:          "config1",
-		Configuration: "Test Configuration",
-		MaxPower:      "500",
-		Functions:     []Function{},
-	}
-	gadget.Configs = append(gadget.Configs, config)
-
-	// Test adding HID keyboard function
-	keyboardHid := HidFunction{
-		Name:         "keyboard",
-		Protocol:     0x01,
-		Subclass:     0x01,
-		ReportLength: 8,
-		Descriptor:   []byte{0x05, 0x01, 0x09, 0x06},
-	}
-
+	// Create the gadget (if not already created)
 	if gadget.Exists() {
 		gadget.Remove()
 		fmt.Println("gadget already exists! Removing Now")
-		return
+		// return
 	}
 
-	err := gadget.AddFunction("hid", keyboardHid)
-	if err != nil {
-		t.Errorf("Error adding HID keyboard function: %v", err)
-	}
+	// Create the gadget
+	err := gadget.Create()
+	assert.NoError(t, err, "Error creating gadget")
 
-	// Check if the HID function is correctly added
-	fnPath, exists := gadget.GetFunctionPath("hid.keyboard")
-	if !exists {
-		t.Errorf("Expected function path for HID keyboard, but it does not exist.")
-	} else {
-		t.Logf("HID keyboard function path: %s", fnPath)
-	}
-
-	// Test adding HID mouse function
-	mouseHid := HidFunction{
-		Name:         "mouse",
-		Protocol:     0x02,
-		Subclass:     0x02,
-		ReportLength: 8,
-		Descriptor:   []byte{0x05, 0x01, 0x09, 0x02},
-	}
-	err = gadget.AddFunction("hid", mouseHid)
-	if err != nil {
-		t.Errorf("Error adding HID mouse function: %v", err)
-	}
-
-	// Check if the HID mouse function is correctly added
-	fnPath, exists = gadget.GetFunctionPath("hid.mouse")
-	if !exists {
-		t.Errorf("Expected function path for HID mouse, but it does not exist.")
-	} else {
-		t.Logf("HID mouse function path: %s", fnPath)
-	}
-
-	// Test adding Mass Storage function
-	massFunc := MassStorageFunction{
-		Name:  "usb0",
+	// Create a mass storage function
+	massFunc := &MassStorageFunction{
+		Name:  "mass_storage.usb0",
 		Stall: true,
 		Luns: []MassStorageLun{
 			{
@@ -90,280 +54,27 @@ func TestAddFunction(t *testing.T) {
 			},
 		},
 	}
-	err = gadget.AddFunction("mass_storage", massFunc)
-	if err != nil {
-		t.Errorf("Error adding mass storage function: %v", err)
-	}
 
-	// Check if the Mass Storage function is correctly added
-	fnPath, exists = gadget.GetFunctionPath("mass_storage.usb0")
-	if !exists {
-		t.Errorf("Expected function path for Mass Storage usb0, but it does not exist.")
-	} else {
-		t.Logf("Mass Storage function path: %s", fnPath)
-	}
-}
+	// Add the function to the gadget
+	err = gadget.AddFunction("c.1", massFunc.Name, massFunc)
+	assert.NoError(t, err, "Error adding mass storage function")
 
-// TestInvalidAddFunction tests invalid function types passed to AddFunction.
-func TestInvalidAddFunction(t *testing.T) {
-	// Create a new Gadget instance
-	gadget := &Gadget{
-		Name:         "test_gadget_invalid",
-		IdVendor:     0x1234,
-		IdProduct:    0x5678,
-		SerialNumber: "123456789",
-		Manufacturer: "TestManufacturer",
-		Product:      "TestProduct",
-	}
+	// Verify the symlink was created correctly
+	fnPath := filepath.Join(gadget.GetGadgetPath(), "functions", massFunc.Name)
+	configPath := filepath.Join(gadget.GetGadgetPath(), "configs", "c.1")
+	_, err = os.Stat(fnPath)
+	assert.NoError(t, err, fmt.Sprintf("Function path %s does not exist", fnPath))
 
-	if gadget.Exists() {
-		gadget.Remove()
-		fmt.Println("gadget already exists! Removing Now")
-		return
-	}
+	_, err = os.Stat(configPath)
+	assert.NoError(t, err, fmt.Sprintf("Config path %s does not exist", configPath))
 
-	// Test adding an invalid function type
-	err := gadget.AddFunction("invalid_type", nil)
-	if err == nil {
-		t.Errorf("Expected error when adding function with invalid type, but got none.")
-	} else {
-		t.Logf("Correctly caught error: %v", err)
-	}
-}
+	// Check if the symlink exists inside the config directory
+	symlinkTarget := filepath.Join(configPath, massFunc.Name)
+	symlink, err := os.Readlink(symlinkTarget)
+	assert.NoError(t, err, fmt.Sprintf("Symlink %s does not exist", symlinkTarget))
+	assert.Equal(t, fnPath, symlink, fmt.Sprintf("Symlink target mismatch for %s", symlinkTarget))
 
-// TestFunctionNameGeneration tests the function name generation logic.
-func TestFunctionNameGeneration(t *testing.T) {
-	// Create a new Gadget instance
-	gadget := &Gadget{
-		Name:         "test_gadget_fn_name",
-		IdVendor:     0x1234,
-		IdProduct:    0x5678,
-		SerialNumber: "123456789",
-		Manufacturer: "TestManufacturer",
-		Product:      "TestProduct",
-	}
-
-	// Create a configuration and add it to the gadget
-	config := Config{
-		Name:          "config1",
-		Configuration: "Test Configuration",
-		MaxPower:      "500",
-		Functions:     []Function{},
-	}
-	gadget.Configs = append(gadget.Configs, config)
-
-	if gadget.Exists() {
-		gadget.Remove()
-		fmt.Println("gadget already exists! Removing Now")
-		return
-	}
-
-	// Add HID keyboard function
-	keyboardHid := HidFunction{
-		Name:         "keyboard",
-		Protocol:     0x01,
-		Subclass:     0x01,
-		ReportLength: 8,
-		Descriptor:   []byte{0x05, 0x01, 0x09, 0x06},
-	}
-	err := gadget.AddFunction("hid", keyboardHid)
-	if err != nil {
-		t.Errorf("Error adding HID keyboard function: %v", err)
-	}
-
-	// Test if the correct function name is generated for HID keyboard
-	fnPath, exists := gadget.GetFunctionPath("hid.keyboard")
-	if !exists {
-		t.Errorf("Expected function path for HID keyboard, but it does not exist.")
-	} else {
-		t.Logf("HID keyboard function path: %s", fnPath)
-	}
-
-	// Add Mass Storage function
-	massFunc := MassStorageFunction{
-		Name:  "usb0",
-		Stall: true,
-		Luns: []MassStorageLun{
-			{
-				Name:          "0",
-				File:          "\n",
-				Removable:     true,
-				Cdrom:         true,
-				Ro:            true,
-				InquiryString: "Test Mass Storage",
-			},
-		},
-	}
-	err = gadget.AddFunction("mass_storage", massFunc)
-	if err != nil {
-		t.Errorf("Error adding mass storage function: %v", err)
-	}
-
-	// Test if the correct function name is generated for Mass Storage
-	fnPath, exists = gadget.GetFunctionPath("mass_storage.usb0")
-	if !exists {
-		t.Errorf("Expected function path for Mass Storage usb0, but it does not exist.")
-	} else {
-		t.Logf("Mass Storage function path: %s", fnPath)
-	}
-}
-
-// TestRemoveFunction tests the removal of a single function from the gadget.
-func TestRemoveFunction(t *testing.T) {
-	// Create a new Gadget instance
-	gadget := &Gadget{
-		Name:         "test_gadget_remove",
-		IdVendor:     0x1234,
-		IdProduct:    0x5678,
-		SerialNumber: "123456789",
-		Manufacturer: "TestManufacturer",
-		Product:      "TestProduct",
-	}
-
-	// Create a configuration and add it to the gadget
-	config := Config{
-		Name:          "config1",
-		Configuration: "Test Configuration",
-		MaxPower:      "500",
-		Functions:     []Function{},
-	}
-	gadget.Configs = append(gadget.Configs, config)
-
-	if gadget.Exists() {
-		gadget.Remove()
-		fmt.Println("gadget already exists! Removing Now")
-		return
-	}
-
-	// Add HID keyboard function
-	keyboardHid := HidFunction{
-		Name:         "keyboard",
-		Protocol:     0x01,
-		Subclass:     0x01,
-		ReportLength: 8,
-		Descriptor:   []byte{0x05, 0x01, 0x09, 0x06},
-	}
-	err := gadget.AddFunction("hid", keyboardHid)
-	if err != nil {
-		t.Errorf("Error adding HID keyboard function: %v", err)
-	}
-
-	// Check if HID function is correctly added
-	fnPath, exists := gadget.GetFunctionPath("hid.keyboard")
-	if !exists {
-		t.Errorf("Expected function path for HID keyboard, but it does not exist.")
-	} else {
-		t.Logf("HID keyboard function path: %s", fnPath)
-	}
-
-	// Remove the HID function
-	err = gadget.RemoveFunction("hid.keyboard")
-	if err != nil {
-		t.Errorf("Error removing HID keyboard function: %v", err)
-	}
-
-	// Check if the function was removed
-	fnPath, exists = gadget.GetFunctionPath("hid.keyboard")
-	if exists {
-		t.Errorf("Function path for HID keyboard should have been removed, but it still exists.")
-	} else {
-		t.Logf("Successfully removed HID keyboard function.")
-	}
-}
-
-// TestRemoveAllFunctions tests the removal of all functions from the gadget.
-func TestRemoveAllFunctions(t *testing.T) {
-	// Create a new Gadget instance
-	gadget := &Gadget{
-		Name:         "test_gadget_remove_all",
-		IdVendor:     0x1234,
-		IdProduct:    0x5678,
-		SerialNumber: "123456789",
-		Manufacturer: "TestManufacturer",
-		Product:      "TestProduct",
-	}
-
-	// Create a configuration and add it to the gadget
-	config := Config{
-		Name:          "config1",
-		Configuration: "Test Configuration",
-		MaxPower:      "500",
-		Functions:     []Function{},
-	}
-	gadget.Configs = append(gadget.Configs, config)
-
-	if gadget.Exists() {
-		gadget.Remove()
-		fmt.Println("gadget already exists! Removing Now")
-		return
-	}
-
-	// Add HID keyboard function
-	keyboardHid := HidFunction{
-		Name:         "keyboard",
-		Protocol:     0x01,
-		Subclass:     0x01,
-		ReportLength: 8,
-		Descriptor:   []byte{0x05, 0x01, 0x09, 0x06},
-	}
-	err := gadget.AddFunction("hid", keyboardHid)
-	if err != nil {
-		t.Errorf("Error adding HID keyboard function: %v", err)
-	}
-
-	// Add Mass Storage function
-	massFunc := MassStorageFunction{
-		Name:  "usb0",
-		Stall: true,
-		Luns: []MassStorageLun{
-			{
-				Name:          "0",
-				File:          "\n", // Replace with actual device path
-				Removable:     true,
-				Cdrom:         true,
-				Ro:            true,
-				InquiryString: "Test Mass Storage",
-			},
-		},
-	}
-	err = gadget.AddFunction("mass_storage", massFunc)
-	if err != nil {
-		t.Errorf("Error adding Mass Storage function: %v", err)
-	}
-
-	// Check if both functions are added
-	fnPath, exists := gadget.GetFunctionPath("hid.keyboard")
-	if !exists {
-		t.Errorf("Expected function path for HID keyboard, but it does not exist.")
-	} else {
-		t.Logf("HID keyboard function path: %s", fnPath)
-	}
-
-	fnPath, exists = gadget.GetFunctionPath("mass_storage.usb0")
-	if !exists {
-		t.Errorf("Expected function path for Mass Storage usb0, but it does not exist.")
-	} else {
-		t.Logf("Mass Storage function path: %s", fnPath)
-	}
-
-	// Remove all functions
-	err = gadget.RemoveAllFunctions()
-	if err != nil {
-		t.Errorf("Error removing all functions: %v", err)
-	}
-
-	// Check if all functions were removed
-	_, exists = gadget.GetFunctionPath("hid.keyboard")
-	if exists {
-		t.Errorf("Function path for HID keyboard should have been removed, but it still exists.")
-	} else {
-		t.Logf("Successfully removed HID keyboard function.")
-	}
-
-	_, exists = gadget.GetFunctionPath("mass_storage.usb0")
-	if exists {
-		t.Errorf("Function path for Mass Storage usb0 should have been removed, but it still exists.")
-	} else {
-		t.Logf("Successfully removed Mass Storage function.")
-	}
+	// Cleanup after the test
+	err = gadget.Remove()
+	assert.NoError(t, err, "Error removing gadget")
 }
