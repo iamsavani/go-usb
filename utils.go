@@ -1,6 +1,9 @@
 package gadget
 
-import "os"
+import (
+	"bytes"
+	"os"
+)
 
 // Convert boolean to "1" or "0" string representation.
 func boolToIntStr(b bool) string {
@@ -24,4 +27,23 @@ func GetUdcs() []string {
 	}
 
 	return udcs
+}
+
+func WriteIfDifferent(path string, content []byte, perm os.FileMode) error {
+	if _, err := os.Stat(path); err == nil {
+		oldContent, err := os.ReadFile(path)
+		if err == nil {
+			if bytes.Equal(oldContent, content) {
+				return nil
+			}
+
+			if len(oldContent) == len(content)+1 &&
+				bytes.Equal(oldContent[:len(content)], content) &&
+				oldContent[len(content)] == '\n' {
+				return nil
+			}
+		}
+	}
+
+	return os.WriteFile(path, content, perm)
 }

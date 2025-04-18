@@ -42,7 +42,7 @@ func (s Step) Run() error {
 		return os.Remove(s.Arg0)
 	case Write, WriteBinary:
 		if s.Arg1 != "" {
-			return os.WriteFile(s.Arg0, []byte(s.Arg1), 0664)
+			return WriteIfDifferent(s.Arg0, []byte(s.Arg1), 0664)
 		}
 		return nil
 	case Remove:
