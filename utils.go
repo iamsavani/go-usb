@@ -2,6 +2,7 @@ package gadget
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 )
 
@@ -46,4 +47,17 @@ func WriteIfDifferent(path string, content []byte, perm os.FileMode) error {
 	}
 
 	return os.WriteFile(path, content, perm)
+}
+
+func RemoveIfExistsStep(path string) error {
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return nil // nothing to remove
+	} else if err != nil {
+		return fmt.Errorf("failed to check existence of %s: %w", path, err)
+	}
+
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to remove %s: %w", path, err)
+	}
+	return nil
 }

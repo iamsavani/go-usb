@@ -39,14 +39,14 @@ func (s Step) Run() error {
 	case Mkdir, MkdirCreateOnly:
 		return os.MkdirAll(s.Arg0, 0775)
 	case Rmdir:
-		return os.Remove(s.Arg0)
+		return RemoveIfExistsStep(s.Arg0)
 	case Write, WriteBinary:
 		if s.Arg1 != "" {
 			return WriteIfDifferent(s.Arg0, []byte(s.Arg1), 0664)
 		}
 		return nil
 	case Remove:
-		return os.Remove(s.Arg0)
+		return RemoveIfExistsStep(s.Arg0)
 	case Symlink:
 		return os.Symlink(s.Arg0, s.Arg1)
 	default:
