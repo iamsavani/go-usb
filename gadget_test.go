@@ -10,20 +10,46 @@ import (
 )
 
 func TestAddFunction(t *testing.T) {
+
+	// Create a mass storage function
+	massFunc := &MassStorageFunction{
+		Name:    "mass_storage.usb0",
+		Stall:   true,
+		Enabled: true,
+		Luns: []MassStorageLun{
+			{
+				Name: "0",
+				Attr: GadgetAttributes{
+					"file":           "\n",
+					"removable":      "1",
+					"cdrom":          "1",
+					"ro":             "1",
+					"inquiry_string": "Test Mass Storage",
+				},
+			},
+		},
+	}
+
 	// Setup a test gadget
 	gadget := &Gadget{
-		Name:         "test_gadget_add",
-		IdVendor:     0x1234,
-		IdProduct:    0x5678,
-		SerialNumber: "123456789",
-		Manufacturer: "TestManufacturer",
-		Product:      "TestProduct",
+		Name: "test_gadget_add",
+		Attrs: GadgetAttributes{
+			"idVendor":  "0x1234",
+			"idProduct": " 0x5678",
+		},
+		ConfigAttrs: GadgetAttributes{
+			"serial_number": "123456789",
+			"manufacturer":  "TestManufacturer",
+			"product":       "TestProduct",
+		},
 		Configs: map[string]*Config{
 			"c.1": {
 				Name:          "c.1",
 				Configuration: "Mass Storage Config",
 				MaxPower:      "120",
-				Functions:     map[string]Function{},
+				Functions: map[string]Function{
+					"mass_storage.usb0": massFunc,
+				},
 			},
 		},
 	}
@@ -38,26 +64,6 @@ func TestAddFunction(t *testing.T) {
 	// Create the gadget
 	err := gadget.Create()
 	assert.NoError(t, err, "Error creating gadget")
-
-	// Create a mass storage function
-	massFunc := &MassStorageFunction{
-		Name:  "mass_storage.usb0",
-		Stall: true,
-		Luns: []MassStorageLun{
-			{
-				Name:          "0",
-				File:          "\n", // Replace with actual device path
-				Removable:     true,
-				Cdrom:         true,
-				Ro:            true,
-				InquiryString: "Test Mass Storage",
-			},
-		},
-	}
-
-	// Add the function to the gadget
-	err = gadget.AddFunction("c.1", massFunc.Name, massFunc)
-	assert.NoError(t, err, "Error adding mass storage function")
 
 	// Verify the symlink was created correctly
 	fnPath := filepath.Join(gadget.GetGadgetPath(), "functions", massFunc.Name)

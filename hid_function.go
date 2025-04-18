@@ -1,11 +1,9 @@
 package gadget
 
-type gadgetAttributes map[string]string
-
 // HidFunction represents a HID gadget function.
 type HidFunction struct {
 	Name    string
-	Attrs   gadgetAttributes
+	Attrs   GadgetAttributes
 	Enabled bool
 }
 

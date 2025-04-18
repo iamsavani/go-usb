@@ -16,8 +16,8 @@ const (
 // Gadget represents a USB gadget.
 type Gadget struct {
 	Name        string
-	Attrs       map[string]string
-	ConfigAttrs map[string]string
+	Attrs       GadgetAttributes
+	ConfigAttrs GadgetAttributes
 	UDC         string
 	Configs     map[string]*Config
 }
@@ -30,6 +30,8 @@ type Config struct {
 	Functions     map[string]Function
 }
 
+type GadgetAttributes map[string]string
+
 // Function is an interface for USB gadget functions.
 type Function interface {
 	GadgetFunctionName() string
@@ -39,9 +41,6 @@ type Function interface {
 }
 
 func (g *Gadget) GetGadgetPath() string {
-	if g.GadgetPath != "" {
-		return g.GadgetPath
-	}
 	return filepath.Join(GadgetConfigBasePath, g.Name)
 }
 

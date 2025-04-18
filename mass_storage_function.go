@@ -43,7 +43,7 @@ func (fn *MassStorageFunction) GadgetFunctionCreate() (steps Steps) {
 // MassStorageLun represents a logical unit number for a mass storage function.
 type MassStorageLun struct {
 	Name string
-	Attr gadgetAttributes
+	Attr GadgetAttributes
 }
 
 // lunCreate generates steps to create the LUN.
