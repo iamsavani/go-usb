@@ -2,7 +2,6 @@ package gadget
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +52,7 @@ func (g *Gadget) GetGadgetPath() string {
 
 func (g *Gadget) ReadConfigfsFile(elem ...string) (string, error) {
 	path := filepath.Join(g.GetGadgetPath(), filepath.Join(elem...))
-	buf, err := ioutil.ReadFile(path)
+	buf, err := os.ReadFile(path)
 	if err != nil {
 		return "", nil
 	}
@@ -73,7 +72,7 @@ func (g *Gadget) Create() error {
 
 // Remove removes the gadget.
 func (g *Gadget) Remove() error {
-	return g.BuildRemovalSteps().Run()
+	return g.CreateSteps().Reverse().Run()
 }
 
 // CreateSteps generates steps to configure the gadget.
@@ -120,96 +119,6 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 		steps.Append(Step{Write, "UDC", g.UDC})
 	}
 
-	return steps.PrependPath(g.GetGadgetPath())
-}
-
-// AddFunction adds a new function to the gadget.
-func (g *Gadget) AddFunction(configName, functionName string, fn Function) error {
-	cfg, ok := g.Configs[configName]
-	if !ok {
-		return fmt.Errorf("config %s not found", configName)
-	}
-	if _, exists := cfg.Functions[functionName]; exists {
-		return fmt.Errorf("function %s already exists", functionName)
-	}
-
-	// Unbind before making changes
-	udcPath := filepath.Join(g.GetGadgetPath(), "UDC")
-	originalUDC, _ := os.ReadFile(udcPath)
-	_ = os.WriteFile(udcPath, []byte(""), 0644)
-
-	cfg.Functions[functionName] = fn
-
-	fnPath := "functions/" + functionName
-	configPath := "configs/" + configName
-
-	steps := Steps{
-		Step{Comment, fmt.Sprintf("Add function `%s` to config `%s`", functionName, configName), ""},
-		Step{Mkdir, "", ""},
-	}
-	steps.Extend(fn.GadgetFunctionCreate())
-	steps.PrependPath(fnPath)
-
-	steps.Append(Step{Symlink, fnPath, configPath + "/" + functionName})
-	steps.PrependPath(g.GetGadgetPath())
-
-	// Run steps to add function
-	if err := steps.Run(); err != nil {
-		return fmt.Errorf("failed to add function: %w", err)
-	}
-
-	// Rebind UDC
-	if len(originalUDC) > 0 {
-		if err := os.WriteFile(udcPath, originalUDC, 0644); err != nil {
-			return fmt.Errorf("failed to rebind UDC: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// RemoveFunction removes a function from a given config in the gadget.
-func (g *Gadget) RemoveFunction(configName, functionName string) error {
-	cfg, ok := g.Configs[configName]
-	if !ok {
-		return fmt.Errorf("config %s not found", configName)
-	}
-
-	if _, exists := cfg.Functions[functionName]; !exists {
-		return fmt.Errorf("function %s not found in config %s", functionName, configName)
-	}
-
-	fnPath := filepath.Join("functions", functionName)
-	configPath := filepath.Join("configs", configName)
-
-	steps := Steps{
-		Step{Comment, fmt.Sprintf("Remove function `%s` from config `%s`", functionName, configName), ""},
-		Step{Remove, filepath.Join(configPath, functionName), ""}, // remove symlink
-		Step{Remove, fnPath, ""}, // remove function directory
-	}
-	steps.PrependPath(g.GetGadgetPath())
-
-	// Remove from internal state map
-	delete(cfg.Functions, functionName)
-
-	return steps.Run()
-}
-
-// BuildRemovalSteps returns steps to remove the entire gadget configuration.
-func (g *Gadget) BuildRemovalSteps() Steps {
-	steps := Steps{Step{Write, "UDC", ""}}
-	for cfgName, cfg := range g.Configs {
-		configPath := filepath.Join("configs", cfgName)
-		for fnName := range cfg.Functions {
-			functionPath := filepath.Join("functions", fnName)
-			steps.Append(Step{Remove, filepath.Join(configPath, fnName), ""})
-			steps.Append(Step{Remove, functionPath, ""})
-		}
-		steps.Append(Step{Remove, filepath.Join(configPath, "strings", StrEnglish), ""})
-		steps.Append(Step{Remove, configPath, ""})
-	}
-	steps.Append(Step{Remove, filepath.Join("strings", StrEnglish), ""})
-	steps.Append(Step{Remove, "", ""}) // remove root gadget dir
 	return steps.PrependPath(g.GetGadgetPath())
 }
 
