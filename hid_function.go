@@ -2,9 +2,10 @@ package gadget
 
 // HidFunction represents a HID gadget function.
 type HidFunction struct {
-	Name    string
-	Attrs   GadgetAttributes
-	Enabled bool
+	Name       string
+	Attrs      GadgetAttributes
+	ReportDesc []byte
+	Enabled    bool
 }
 
 // Ensure HidFunction implements the Function interface.
@@ -24,12 +25,9 @@ func (fn *HidFunction) GadgetFunctionType() string {
 func (fn *HidFunction) GadgetFunctionCreate() Steps {
 	steps := Steps{}
 	for key, value := range fn.Attrs {
-		if key == "report_desc" {
-			steps = append(steps, Step{WriteBinary, key, value})
-		} else {
-			steps = append(steps, Step{Write, key, value})
-		}
+		steps = append(steps, Step{Write, key, value})
 	}
+	steps = append(steps, Step{WriteBinary, "report_desc", string(fn.ReportDesc)})
 	return steps
 }
 
