@@ -1,16 +1,12 @@
 package gadget
 
-import (
-	"strconv"
-)
+type gadgetAttributes map[string]string
 
 // HidFunction represents a HID gadget function.
 type HidFunction struct {
-	Name         string
-	Protocol     uint8
-	Subclass     uint8
-	ReportLength uint16
-	Descriptor   []byte
+	Name    string
+	Attrs   gadgetAttributes
+	Enabled bool
 }
 
 // Ensure HidFunction implements the Function interface.
@@ -28,10 +24,17 @@ func (fn *HidFunction) GadgetFunctionType() string {
 
 // GadgetFunctionCreate generates steps to create the HID gadget function.
 func (fn *HidFunction) GadgetFunctionCreate() Steps {
-	return Steps{
-		Step{Write, "protocol", strconv.Itoa(int(fn.Protocol))},
-		Step{Write, "subclass", strconv.Itoa(int(fn.Subclass))},
-		Step{Write, "report_length", strconv.Itoa(int(fn.ReportLength))},
-		Step{WriteBinary, "report_desc", string(fn.Descriptor)},
+	steps := Steps{}
+	for key, value := range fn.Attrs {
+		if key == "report_desc" {
+			steps = append(steps, Step{WriteBinary, key, value})
+		} else {
+			steps = append(steps, Step{Write, key, value})
+		}
 	}
+	return steps
+}
+
+func (fn *HidFunction) isEnabled() bool {
+	return fn.Enabled
 }

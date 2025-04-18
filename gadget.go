@@ -15,17 +15,11 @@ const (
 
 // Gadget represents a USB gadget.
 type Gadget struct {
-	Name         string
-	GadgetPath   string
-	IdVendor     uint16
-	IdProduct    uint16
-	BcdDevice    uint16
-	BcdUSB       uint16
-	SerialNumber string
-	Manufacturer string
-	Product      string
-	UDC          string
-	Configs      map[string]*Config
+	Name        string
+	Attrs       map[string]string
+	ConfigAttrs map[string]string
+	UDC         string
+	Configs     map[string]*Config
 }
 
 // Config represents a USB gadget configuration.
@@ -41,6 +35,7 @@ type Function interface {
 	GadgetFunctionName() string
 	GadgetFunctionType() string
 	GadgetFunctionCreate() Steps
+	isEnabled() bool
 }
 
 func (g *Gadget) GetGadgetPath() string {
@@ -75,19 +70,37 @@ func (g *Gadget) Remove() error {
 	return g.CreateSteps().Reverse().Run()
 }
 
+// RemoveIfExists checks if a file or symlink exists at the given path and removes it if it does.
+func (g *Gadget) RemoveIfExists(path string) error {
+	symblinkPath := filepath.Join(g.GetGadgetPath(), path)
+	if _, err := os.Lstat(symblinkPath); os.IsNotExist(err) {
+		return nil // nothing to remove
+	} else if err != nil {
+		return fmt.Errorf("error checking path %s: %w", symblinkPath, err)
+	}
+
+	if err := os.Remove(symblinkPath); err != nil {
+		return fmt.Errorf("failed to remove %s: %w", symblinkPath, err)
+	}
+
+	return nil
+}
+
 // CreateSteps generates steps to configure the gadget.
 func (g *Gadget) CreateSteps() (steps Steps) {
+
 	steps = Steps{
 		Step{Mkdir, "", ""},
-		Step{Write, "idVendor", fmt.Sprintf("0x%04x", g.IdVendor)},
-		Step{Write, "idProduct", fmt.Sprintf("0x%04x", g.IdProduct)},
-		Step{Write, "bcdUSB", fmt.Sprintf("0x%04x", g.BcdUSB)},
-		Step{Write, "bcdDevice", fmt.Sprintf("0x%04x", g.BcdDevice)},
+	}
 
-		Step{Mkdir, "strings/" + StrEnglish, ""},
-		Step{Write, "strings/" + StrEnglish + "/serialnumber", g.SerialNumber},
-		Step{Write, "strings/" + StrEnglish + "/manufacturer", g.Manufacturer},
-		Step{Write, "strings/" + StrEnglish + "/product", g.Product},
+	for key, value := range g.Attrs {
+		steps = append(steps, Step{Write, key, value})
+	}
+
+	steps = append(steps, Step{Mkdir, filepath.Join("strings", StrEnglish), ""})
+
+	for key, value := range g.ConfigAttrs {
+		steps = append(steps, Step{Write, filepath.Join("strings", StrEnglish, key), value})
 	}
 
 	for name, c := range g.Configs {
@@ -102,7 +115,12 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 		steps.Extend(configSteps)
 
 		for fname, fn := range c.Functions {
-			fnPath := "functions/" + fname
+			linkPath := filepath.Join(configPath, fname)
+			if !fn.isEnabled() {
+				g.RemoveIfExists(linkPath)
+				continue // skip this function entirely
+			}
+			fnPath := filepath.Join("functions", fname)
 			fnSteps := Steps{
 				Step{Comment, fmt.Sprintf("config `%s`, function `%s`", name, fname), ""},
 				Step{Mkdir, "", ""},
@@ -111,7 +129,7 @@ func (g *Gadget) CreateSteps() (steps Steps) {
 			fnSteps.PrependPath(fnPath)
 			steps.Extend(fnSteps)
 			// Attach function to configuration
-			steps.Append(Step{Symlink, fnPath, configPath + "/" + fname})
+			steps.Append(Step{Symlink, fnPath, linkPath})
 		}
 	}
 

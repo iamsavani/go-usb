@@ -2,9 +2,10 @@ package gadget
 
 // MassStorageFunction represents a mass storage gadget function.
 type MassStorageFunction struct {
-	Name  string
-	Stall bool
-	Luns  []MassStorageLun
+	Name    string
+	Stall   bool
+	Luns    []MassStorageLun
+	Enabled bool
 }
 
 // Ensure MassStorageFunction implements the Function interface.
@@ -41,21 +42,19 @@ func (fn *MassStorageFunction) GadgetFunctionCreate() (steps Steps) {
 
 // MassStorageLun represents a logical unit number for a mass storage function.
 type MassStorageLun struct {
-	Name          string
-	File          string
-	Removable     bool
-	Cdrom         bool
-	Ro            bool
-	InquiryString string
+	Name string
+	Attr gadgetAttributes
 }
 
 // lunCreate generates steps to create the LUN.
 func (lun *MassStorageLun) lunCreate() Steps {
-	return Steps{
-		Step{Write, "file", lun.File},
-		Step{Write, "removable", boolToIntStr(lun.Removable)},
-		Step{Write, "cdrom", boolToIntStr(lun.Cdrom)},
-		Step{Write, "ro", boolToIntStr(lun.Ro)},
-		Step{Write, "inquiry_string", lun.InquiryString},
+	steps := Steps{}
+	for key, value := range lun.Attr {
+		steps = append(steps, Step{Write, key, value})
 	}
+	return steps
+}
+
+func (fn *MassStorageFunction) isEnabled() bool {
+	return fn.Enabled
 }
