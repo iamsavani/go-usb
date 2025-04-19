@@ -66,7 +66,12 @@ func (g *Gadget) Create() error {
 
 // Remove removes the gadget.
 func (g *Gadget) Remove() error {
-	return g.CreateSteps().Reverse().Run()
+	return g.RemoveSteps().Run()
+}
+
+// RemoveSteps generates steps to remove the gadget by reversing the creation steps.
+func (g *Gadget) RemoveSteps() Steps {
+	return g.CreateSteps().Undo().Reverse()
 }
 
 // RemoveIfExists checks if a file or symlink exists at the given path and removes it if it does.
